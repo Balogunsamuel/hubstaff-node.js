@@ -3,6 +3,7 @@
   "version": "0.1.0",
   "private": true,
   "dependencies": {
+    "@sentry/react": "^9.35.0",
     "axios": "^1.10.0",
     "chart.js": "^4.5.0",
     "cra-template": "1.2.0",
