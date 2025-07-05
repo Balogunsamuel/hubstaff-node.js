@@ -1,5 +1,6 @@
 // Frontend API utility - Token handling
-const API_BASE_URL = process.env.REACT_APP_API_URL || "http://localhost:8001";
+const API_BASE_URL =
+  process.env.REACT_APP_API_URL || "https://hubstaff-node-js-1.onrender.com/";
 
 // Get token from localStorage
 const getToken = () => {
