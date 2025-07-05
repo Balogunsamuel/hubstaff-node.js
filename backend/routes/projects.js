@@ -5,8 +5,7 @@ const Project = require("../models/Project");
 const Task = require("../models/Task");
 const TimeEntry = require("../models/TimeEntry");
 const { authMiddleware, requireManager } = require("../middleware/auth");
-
-const router = express.Router();
+// const express = require('express');
 
 // Get all projects
 router.get("/", authMiddleware, async (req, res) => {

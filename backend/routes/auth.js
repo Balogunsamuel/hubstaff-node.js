@@ -1,6 +1,5 @@
-// Update your backend/routes/auth.js registration endpoint to handle roles
-
-// Add this validation to your registration route
+const express = require("express");
+const router = express.Router();
 const { body, validationResult } = require("express-validator");
 
 router.post(
@@ -85,3 +84,4 @@ router.post(
     }
   }
 );
+module.exports = router;
