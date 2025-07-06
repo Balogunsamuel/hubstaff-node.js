@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import io from "socket.io-client";
 
-const BACKEND_URL = process.env.REACT_APP_BACKEND_URL;
+const BACKEND_URL = process.env.REACT_APP_BACKEND_URL?.replace(/\/+$/, ""); // Remove trailing slashes
 
 export const useWebSocket = (user) => {
   const [isConnected, setIsConnected] = useState(false);
