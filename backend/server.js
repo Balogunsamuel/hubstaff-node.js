@@ -30,7 +30,7 @@ const allowedOrigins = [
   "http://localhost:3000",
   "http://127.0.0.1:3000",
   "http://172.20.10.7:3000",
-  "https://hubstaff-node-js-git-main-balogunsamuels-projects.vercel.app", // ✅ Add this
+  "https://hubstaff-node-js-git-main-balogunsamuels-projects.vercel.app",
   process.env.FRONTEND_URL,
 ].filter(Boolean);
 
@@ -80,44 +80,91 @@ app.use(compression());
 app.use(morgan("combined"));
 app.use(limiter);
 
-// CORS configuration
+// Add debug logging for CORS
+app.use((req, res, next) => {
+  const origin = req.get("origin");
+  logger.info(`Request: ${req.method} ${req.path} from origin: ${origin}`);
+  next();
+});
+
+// Enhanced CORS configuration
 app.use(
   cors({
     origin: function (origin, callback) {
       // Allow requests with no origin (like mobile apps or curl requests)
-      if (!origin) return callback(null, true);
+      if (!origin) {
+        logger.info("CORS: No origin, allowing request");
+        return callback(null, true);
+      }
+
+      logger.info(`CORS: Checking origin: ${origin}`);
 
       if (allowedOrigins.includes(origin)) {
+        logger.info(`CORS: Origin allowed: ${origin}`);
         callback(null, true);
       } else {
-        logger.warn(`CORS blocked origin: ${origin}`);
+        logger.warn(`CORS: Origin blocked: ${origin}`);
+        logger.warn(`CORS: Allowed origins: ${allowedOrigins.join(", ")}`);
         callback(new Error("Not allowed by CORS"));
       }
     },
     credentials: true,
-    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization", "X-Requested-With"],
+    methods: ["GET", "POST", "PUT", "DELETE", "OPTIONS", "PATCH"],
+    allowedHeaders: [
+      "Content-Type",
+      "Authorization",
+      "X-Requested-With",
+      "Accept",
+      "Origin",
+      "Cache-Control",
+      "Pragma",
+    ],
+    exposedHeaders: ["Authorization"],
+    preflightContinue: false,
+    optionsSuccessStatus: 200,
   })
 );
 
-// Handle preflight requests
+// Enhanced preflight handler - IMPORTANT: This must come BEFORE your routes
 app.options("*", (req, res) => {
   const origin = req.get("origin");
+  logger.info(
+    `Preflight OPTIONS request from origin: ${origin} for ${req.path}`
+  );
+
   if (allowedOrigins.includes(origin) || !origin) {
+    logger.info(`Preflight: Allowing origin: ${origin}`);
+
     res.header("Access-Control-Allow-Origin", origin || "*");
     res.header(
       "Access-Control-Allow-Methods",
-      "GET, POST, PUT, DELETE, OPTIONS"
+      "GET, POST, PUT, DELETE, OPTIONS, PATCH"
     );
     res.header(
       "Access-Control-Allow-Headers",
-      "Content-Type, Authorization, X-Requested-With"
+      "Content-Type, Authorization, X-Requested-With, Accept, Origin, Cache-Control, Pragma"
     );
     res.header("Access-Control-Allow-Credentials", "true");
-    res.sendStatus(200);
+    res.header("Access-Control-Max-Age", "86400"); // 24 hours
+
+    logger.info("Preflight: Sending 200 OK with CORS headers");
+    res.status(200).end();
   } else {
-    res.sendStatus(403);
+    logger.warn(`Preflight: Blocking origin: ${origin}`);
+    res.status(403).json({ error: "CORS policy violation" });
   }
+});
+
+// Additional middleware to ensure CORS headers on all responses
+app.use((req, res, next) => {
+  const origin = req.get("origin");
+
+  if (allowedOrigins.includes(origin) || !origin) {
+    res.header("Access-Control-Allow-Origin", origin || "*");
+    res.header("Access-Control-Allow-Credentials", "true");
+  }
+
+  next();
 });
 
 app.use(express.json({ limit: "50mb" }));
