@@ -73,13 +73,26 @@ const apiCall = async (endpoint, options = {}) => {
   }
 };
 
-// Login function
+// Login function (don't send auth header for login)
 const login = async (credentials) => {
   try {
-    const response = await apiCall("/api/auth/login", {
+    const url = `${API_BASE_URL}/api/auth/login`;
+    console.log(`Making login request to: ${url}`); // Debug log
+
+    const response = await fetch(url, {
       method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
       body: JSON.stringify(credentials),
     });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(
+        errorData.error || `HTTP ${response.status}: ${response.statusText}`
+      );
+    }
 
     const data = await response.json();
 
@@ -95,13 +108,26 @@ const login = async (credentials) => {
   }
 };
 
-// Register function
+// Register function (don't send auth header for registration)
 const register = async (userData) => {
   try {
-    const response = await apiCall("/api/auth/register", {
+    const url = `${API_BASE_URL}/api/auth/register`;
+    console.log(`Making register request to: ${url}`); // Debug log
+
+    const response = await fetch(url, {
       method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
       body: JSON.stringify(userData),
     });
+
+    if (!response.ok) {
+      const errorData = await response.json().catch(() => ({}));
+      throw new Error(
+        errorData.error || `HTTP ${response.status}: ${response.statusText}`
+      );
+    }
 
     const data = await response.json();
 
