@@ -1,87 +1,228 @@
 const express = require("express");
+const {
+  JWTHandler,
+  ACCESS_TOKEN_EXPIRE_MINUTES,
+} = require("../auth/jwt_handler");
+const { getCurrentUser } = require("../auth/dependencies");
+const { DatabaseOperations } = require("../database/mongodb");
+const {
+  User,
+  validateUserCreate,
+  validateUserLogin,
+  createUserFromData,
+} = require("../models/User");
+
 const router = express.Router();
-const { body, validationResult } = require("express-validator");
 
-router.post(
-  "/register",
-  [
-    body("name")
-      .trim()
-      .isLength({ min: 2 })
-      .withMessage("Name must be at least 2 characters"),
-    body("email")
-      .isEmail()
-      .normalizeEmail()
-      .withMessage("Valid email is required"),
-    body("password")
-      .isLength({ min: 6 })
-      .withMessage("Password must be at least 6 characters"),
-    body("company")
-      .trim()
-      .isLength({ min: 2 })
-      .withMessage("Company name is required"),
-    body("role")
-      .optional()
-      .isIn(["admin", "manager", "user"])
-      .withMessage("Invalid role specified"),
-  ],
-  async (req, res) => {
-    try {
-      const errors = validationResult(req);
-      if (!errors.isEmpty()) {
-        return res.status(400).json({ errors: errors.array() });
-      }
+// Register new user
+router.post("/register", async (req, res) => {
+  try {
+    // Validate input
+    const userData = validateUserCreate(req.body);
 
-      const { name, email, password, company, role = "user" } = req.body;
-
-      // Check if user already exists
-      const existingUser = await User.findOne({ email });
-      if (existingUser) {
-        return res
-          .status(400)
-          .json({ error: "User already exists with this email" });
-      }
-
-      // Hash password
-      const saltRounds = 12;
-      const hashedPassword = await bcrypt.hash(password, saltRounds);
-
-      // Create new user with role
-      const user = new User({
-        id: uuidv4(),
-        name: name.trim(),
-        email: email.toLowerCase().trim(),
-        password: hashedPassword,
-        company: company.trim(),
-        role: role, // Include the selected role
-        lastLogin: new Date(),
+    // Check if user already exists
+    const existingUser = await DatabaseOperations.getDocument("users", {
+      email: userData.email,
+    });
+    if (existingUser) {
+      return res.status(400).json({
+        error: "Email already registered",
+        message: "A user with this email already exists",
       });
-
-      await user.save();
-
-      // Generate JWT token
-      const token = jwt.sign(
-        {
-          id: user.id,
-          email: user.email,
-          role: user.role,
-        },
-        process.env.JWT_SECRET,
-        { expiresIn: "7d" }
-      );
-
-      // Log the registration
-      console.log(`New user registered: ${user.email} with role: ${user.role}`);
-
-      res.status(201).json({
-        message: "User registered successfully",
-        user: user.toJSON(), // This will exclude the password
-        token,
-      });
-    } catch (error) {
-      console.error("Registration error:", error);
-      res.status(500).json({ error: "Internal server error" });
     }
+
+    // Hash password
+    const hashedPassword = JWTHandler.hashPassword(userData.password);
+
+    // Create user
+    const user = createUserFromData({
+      name: userData.name,
+      email: userData.email,
+      company: userData.company,
+      role: userData.role,
+    });
+
+    const userDoc = user.toJSON();
+    userDoc.password = hashedPassword;
+
+    await DatabaseOperations.createDocument("users", userDoc);
+
+    // Create tokens
+    const accessToken = JWTHandler.createAccessToken(
+      { sub: user.id },
+      `${ACCESS_TOKEN_EXPIRE_MINUTES}m`
+    );
+    const refreshToken = JWTHandler.createRefreshToken({ sub: user.id });
+
+    res.status(201).json({
+      access_token: accessToken,
+      refresh_token: refreshToken,
+      token_type: "bearer",
+      user: user.toResponse(),
+    });
+  } catch (error) {
+    console.error("Registration error:", error);
+
+    if (error.message.includes("Validation error")) {
+      return res.status(400).json({
+        error: "Validation Error",
+        message: error.message,
+      });
+    }
+
+    res.status(500).json({
+      error: "Registration failed",
+      message: "Internal server error during registration",
+    });
   }
-);
+});
+
+// Login user
+router.post("/login", async (req, res) => {
+  try {
+    // Validate input
+    const credentials = validateUserLogin(req.body);
+
+    // Get user
+    const userData = await DatabaseOperations.getDocument("users", {
+      email: credentials.email,
+    });
+    if (
+      !userData ||
+      !JWTHandler.verifyPassword(credentials.password, userData.password)
+    ) {
+      return res.status(401).json({
+        error: "Invalid credentials",
+        message: "Incorrect email or password",
+      });
+    }
+
+    const user = createUserFromData(userData);
+
+    // Update last active and status
+    await DatabaseOperations.updateDocument(
+      "users",
+      { id: user.id },
+      {
+        status: "active",
+        last_active: new Date(),
+      }
+    );
+
+    // Create tokens
+    const accessToken = JWTHandler.createAccessToken(
+      { sub: user.id },
+      `${ACCESS_TOKEN_EXPIRE_MINUTES}m`
+    );
+    const refreshToken = JWTHandler.createRefreshToken({ sub: user.id });
+
+    res.json({
+      access_token: accessToken,
+      refresh_token: refreshToken,
+      token_type: "bearer",
+      user: user.toResponse(),
+    });
+  } catch (error) {
+    console.error("Login error:", error);
+
+    if (error.message.includes("Validation error")) {
+      return res.status(400).json({
+        error: "Validation Error",
+        message: error.message,
+      });
+    }
+
+    res.status(500).json({
+      error: "Login failed",
+      message: "Internal server error during login",
+    });
+  }
+});
+
+// Logout user
+router.post("/logout", getCurrentUser, async (req, res) => {
+  try {
+    const user = req.user;
+
+    // Update user status
+    await DatabaseOperations.updateDocument(
+      "users",
+      { id: user.id },
+      { status: "offline" }
+    );
+
+    res.json({ message: "Successfully logged out" });
+  } catch (error) {
+    console.error("Logout error:", error);
+    res.status(500).json({
+      error: "Logout failed",
+      message: "Internal server error during logout",
+    });
+  }
+});
+
+// Get current user information
+router.get("/me", getCurrentUser, async (req, res) => {
+  try {
+    const user = createUserFromData(req.user);
+    res.json(user.toResponse());
+  } catch (error) {
+    console.error("Get current user error:", error);
+    res.status(500).json({
+      error: "Failed to get user information",
+      message: "Internal server error",
+    });
+  }
+});
+
+// Refresh access token
+router.post("/refresh", async (req, res) => {
+  try {
+    const { refresh_token } = req.body;
+
+    if (!refresh_token) {
+      return res.status(400).json({
+        error: "Refresh token required",
+        message: "Please provide a refresh token",
+      });
+    }
+
+    const decoded = JWTHandler.verifyToken(refresh_token);
+    if (!decoded) {
+      return res.status(401).json({
+        error: "Invalid refresh token",
+        message: "Refresh token is invalid or expired",
+      });
+    }
+
+    // Verify user still exists
+    const userData = await DatabaseOperations.getDocument("users", {
+      id: decoded.sub,
+    });
+    if (!userData) {
+      return res.status(401).json({
+        error: "User not found",
+        message: "User associated with token not found",
+      });
+    }
+
+    // Create new access token
+    const accessToken = JWTHandler.createAccessToken(
+      { sub: decoded.sub },
+      `${ACCESS_TOKEN_EXPIRE_MINUTES}m`
+    );
+
+    res.json({
+      access_token: accessToken,
+      token_type: "bearer",
+    });
+  } catch (error) {
+    console.error("Token refresh error:", error);
+    res.status(500).json({
+      error: "Token refresh failed",
+      message: "Internal server error during token refresh",
+    });
+  }
+});
+
 module.exports = router;
