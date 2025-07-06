@@ -30,6 +30,7 @@ const allowedOrigins = [
   "http://localhost:3000",
   "http://127.0.0.1:3000",
   "http://172.20.10.7:3000",
+  "https://hubstaff-node-js-git-main-balogunsamuels-projects.vercel.app", // ✅ Add this
   process.env.FRONTEND_URL,
 ].filter(Boolean);
 
